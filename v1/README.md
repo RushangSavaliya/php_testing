@@ -1,17 +1,13 @@
-PHP Socket Programming Example
-==============================
+# PHP Socket Programming Example
 
 This project demonstrates simple client-server communication using PHP sockets.
 
-Files
------
+## Files
 
 - **server.php**: This file contains the server-side code that listens for incoming connections and reads messages from clients.
-
 - **client.php**: This file contains the client-side code that sends messages to the server.
 
-How to Run
-----------
+## How to Run
 
 ### Set up 
 
