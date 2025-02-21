@@ -1,128 +1,122 @@
 <?php
+// Define the server host and port
+$host = '127.0.0.1';
+$port = 8080;
 
-// Define the host and port
-$host = '127.0.0.1'; 
-$port = 8080;        
+// Create a TCP/IP socket
+$serverSocket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+if (!$serverSocket) {
+    die("Error creating socket: " . socket_strerror(socket_last_error()) . "\n");
+}
 
-// Create a socket
-$socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
+// Allow the port to be reused
+socket_set_option($serverSocket, SOL_SOCKET, SO_REUSEADDR, 1);
 
-// Set socket options (This sets the socket option to reuse the address)
-socket_set_option($socket, SOL_SOCKET, SO_REUSEADDR, 1);
+// Bind the socket to the specified host and port
+if (!socket_bind($serverSocket, $host, $port)) {
+    die("Error binding socket: " . socket_strerror(socket_last_error()) . "\n");
+}
 
-// Bind the socket to the address and port
-socket_bind($socket, $host, $port);
+// Start listening for incoming connections
+if (!socket_listen($serverSocket)) {
+    die("Error listening on socket: " . socket_strerror(socket_last_error()) . "\n");
+}
 
-// Start listening for connections
-socket_listen($socket);
+echo "Server started on $host:$port\n";
 
-// Create an array to store the connected clients
-$clients = []; 
+// Array to hold connected client sockets
+$clients = [];
 
-echo "WebSocket server started on $host:$port\n";
-
-// Keep listening for connections
 while (true) {
+    // Prepare an array of sockets to check for incoming data
+    $readSockets = $clients;
+    $readSockets[] = $serverSocket; // Include the main server socket
 
-    // Create an array of sockets to listen to
-    $changedSockets = $clients;
+    // Initialize arrays for write and exceptions (not used here)
+    $writeSockets = [];
+    $exceptSockets = [];
 
-    // Add the main socket to the array
-    $changedSockets[] = $socket;
-
-    // Create an array of sockets to listen to
-    $write = [];
-    $except = [];
-
-    // Listen to the sockets
-    socket_select($changedSockets, $write, $except, 0, 10);
-
-    // Check if there is a new connection
-    if (in_array($socket, $changedSockets)) {
-        // Accept the new connection
-        $newSocket = socket_accept($socket);
-        // Add the new socket to the clients array
-        $clients[] = $newSocket;
-        // Set handshake flag to false
-        $handshake = false;
-        echo "New client connected\n";
-        // Remove the main socket from the changed sockets array
-        $socketKey = array_search($socket, $changedSockets);
-        unset($changedSockets[$socketKey]);
+    // Use socket_select to wait for any activity on the sockets
+    if (socket_select($readSockets, $writeSockets, $exceptSockets, 0, 10) < 1) {
+        continue; // No activity; continue looping
     }
 
-    // Loop through all changed sockets
-    foreach ($changedSockets as $clientSocket) {
-        // Receive data from the socket
-        $data = @socket_recv($clientSocket, $buffer, 1024, 0);
-        // Check if the client has disconnected
-        if ($data === false || $data == 0) {
-            echo "client disconnected\n";
-            // Remove the client from the clients array
+    // Check if there's a new connection on the server socket
+    if (in_array($serverSocket, $readSockets)) {
+        $newSocket = socket_accept($serverSocket);
+        if ($newSocket !== false) {
+            $clients[] = $newSocket; // Add new client to the clients array
+
+            // Read the client's handshake request headers
+            $header = socket_read($newSocket, 1024);
+            // Perform the WebSocket handshake (protocol upgrade)
+            handshake($newSocket, $header);
+            // Send a welcome message to the new client
+            socket_write($newSocket, mask("Welcome to the WebSocket server!"));
+        }
+        // Remove the server socket from the read list
+        $serverSocketKey = array_search($serverSocket, $readSockets);
+        unset($readSockets[$serverSocketKey]);
+    }
+
+    // Loop through the sockets that have data
+    foreach ($readSockets as $clientSocket) {
+        // Read data from the client socket
+        $data = @socket_read($clientSocket, 1024);
+        if (!$data) {
+            // If no data, the client has disconnected
             $clientKey = array_search($clientSocket, $clients);
             unset($clients[$clientKey]);
-            // Close the socket
             socket_close($clientSocket);
             continue;
         }
-
-        // Perform the handshake if not already done
-        if (!$handshake) {
-            performHandshake($clientSocket, $buffer);
-            $handshake = true;
-        } else {
-            // Unmask the received message
-            $message = unmask($buffer);
-            if (!empty($message)) {
-                echo "Received: $message\n";
-                // Send the message to all connected clients except the sender
-                foreach ($clients as $client) {
-                    if ($client != $clientSocket) {
-                        sendMessage($client, $message);
-                    }
-                }
-            }
+        // Decode the masked message from the client
+        $message = unmask($data);
+        echo "Received: $message\n";
+        // Broadcast the message to all connected clients
+        foreach ($clients as $client) {
+            socket_write($client, mask("Echo: " . $message));
         }
     }
 }
 
-// Function to perform the WebSocket handshake
-function performHandshake($clientSocket, $headers) {
-    // Parse the headers
-    $headers = parseHeaders($headers);
-    // Get the Sec-WebSocket-Key from the headers
-    $secKey = $headers['Sec-WebSocket-Key'];
-    // Create the Sec-WebSocket-Accept key
-    $secAccept = base64_encode(pack('H*', sha1($secKey . '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')));
-    // Create the handshake response
-    $handshakeResponse = "HTTP/1.1 101 Switching Protocols\r\n" .
-        "Upgrade: websocket\r\n" .
-        "Connection: Upgrade\r\n" .
-        "Sec-WebSocket-Accept: $secAccept\r\n\r\n";
-    // Send the handshake response
-    socket_write($clientSocket, $handshakeResponse, strlen($handshakeResponse));
+// Close the main server socket when finished
+socket_close($serverSocket);
+
+
+
+
+/**
+ * Perform the WebSocket handshake with the client.
+ *
+ * @param resource $client The client socket.
+ * @param string   $header The HTTP headers from the client.
+ */
+function handshake($client, $header) {
+    // Extract the Sec-WebSocket-Key from the headers using a regular expression
+    preg_match("/Sec-WebSocket-Key: (.*)\r\n/", $header, $matches);
+    $key = trim($matches[1]);
+
+    // Create the Sec-WebSocket-Accept key using the GUID as per the protocol
+    $acceptKey = base64_encode(pack('H*', sha1($key . "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")));
+
+    // Prepare the upgrade headers required by the protocol
+    $upgrade = "HTTP/1.1 101 Switching Protocols\r\n" .
+               "Upgrade: websocket\r\n" .
+               "Connection: Upgrade\r\n" .
+               "Sec-WebSocket-Accept: $acceptKey\r\n\r\n";
+
+    // Send the handshake response to the client
+    socket_write($client, $upgrade);
 }
 
-// Function to parse HTTP headers
-function parseHeaders($headers) {
-    // Split the headers into an array
-    $headers = explode("\r\n", $headers);
-    $headerArray = [];
-    // Loop through each header
-    foreach ($headers as $header) {
-        // Split the header into key and value
-        $parts = explode(": ", $header);
-        if (count($parts) === 2) {
-            $headerArray[$parts[0]] = $parts[1];
-        }
-    }
-    return $headerArray;
-}
-
-// Function to unmask the received message
-function unmask($payload)
-{
-    // Get the length of the payload
+/**
+ * Unmask (decode) a WebSocket message received from the client.
+ *
+ * @param string $payload The masked payload from the client.
+ * @return string         The unmasked (decoded) message.
+ */
+function unmask($payload) {
     $length = ord($payload[1]) & 127;
     if ($length == 126) {
         $masks = substr($payload, 4, 4);
@@ -134,54 +128,29 @@ function unmask($payload)
         $masks = substr($payload, 2, 4);
         $data = substr($payload, 6);
     }
-    $unmaskedtext = '';
-    // Unmask the data
-    for ($i = 0; $i < strlen($data); ++$i) {
-        $unmaskedtext .= $data[$i] ^ $masks[$i % 4];
+    $text = '';
+    for ($i = 0; $i < strlen($data); $i++) {
+        $text .= $data[$i] ^ $masks[$i % 4];
     }
-    return $unmaskedtext;
+    return $text;
 }
 
-// Function to send a message to the client
-function sendMessage($clientSocket, $message)
-{
-    // Mask the message
-    $message = mask($message);
-    // Send the message
-    socket_write($clientSocket, $message, strlen($message));
-}
-
-// Function to mask the message
-function mask($message)
-{
-    $frame = [];
-    $frame[0] = 129;
-
-    $length = strlen($message);
+/**
+ * Mask (encode) a message to be sent to the client.
+ *
+ * @param string $text The plain text message.
+ * @return string      The masked message following the WebSocket framing.
+ */
+function mask($text) {
+    $b1 = 0x81; // 0x81 indicates a final text frame
+    $length = strlen($text);
     if ($length <= 125) {
-        $frame[1] = $length;
-    } elseif ($length <= 65535) {
-        $frame[1] = 126;
-        $frame[2] = ($length >> 8) & 255;
-        $frame[3] = $length & 255;
+        $header = pack('CC', $b1, $length);
+    } elseif ($length > 125 && $length < 65536) {
+        $header = pack('CCn', $b1, 126, $length);
     } else {
-        $frame[1] = 127;
-        $frame[2] = ($length >> 56) & 255;
-        $frame[3] = ($length >> 48) & 255;
-        $frame[4] = ($length >> 40) & 255;
-        $frame[5] = ($length >> 32) & 255;
-        $frame[6] = ($length >> 24) & 255;
-        $frame[7] = ($length >> 16) & 255;
-        $frame[8] = ($length >> 8) & 255;
-        $frame[9] = $length & 255;
+        $header = pack('CCNN', $b1, 127, $length);
     }
-
-    // Convert the message to an array of ASCII values
-    foreach (str_split($message) as $char) {
-        $frame[] = ord($char);
-    }
-
-    // Convert the ASCII values back to characters and return the frame
-    return implode(array_map('chr', $frame));
+    return $header . $text;
 }
 ?>
