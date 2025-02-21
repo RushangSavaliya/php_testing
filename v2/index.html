@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WebSocket Client</title>
     <style>
+        /* Basic styling for the body */
         body {
             font-family: Arial, sans-serif;
             background-color: #f4f4f9;
@@ -14,6 +15,8 @@
             height: 100vh;
             margin: 0;
         }
+
+        /* Styling for the container div */
         .container {
             background-color: white;
             padding: 20px;
@@ -22,9 +25,13 @@
             width: 300px;
             text-align: center;
         }
+
+        /* Styling for the heading */
         h2 {
             color: #333;
         }
+
+        /* Styling for the buttons */
         button {
             background-color: #4CAF50;
             color: white;
@@ -34,9 +41,13 @@
             border-radius: 5px;
             cursor: pointer;
         }
+
+        /* Styling for the button hover state */
         button:hover {
             background-color: #45a049;
         }
+
+        /* Styling for the input field */
         input {
             width: calc(100% - 22px);
             padding: 10px;
@@ -44,6 +55,8 @@
             border-radius: 5px;
             border: 1px solid #ccc;
         }
+
+        /* Styling for the output div */
         #output {
             margin-top: 20px;
             background-color: #f9f9f9;
@@ -60,33 +73,48 @@
 <body>
     <div class="container">
         <h2>WebSocket Client</h2>
+        <!-- Button to connect to the WebSocket server -->
         <button onclick="connect()">Connect</button>
+        <!-- Input field to type messages -->
         <input type="text" id="messageInput" placeholder="Type your message here...">
+        <!-- Button to send the message -->
         <button onclick="sendMessage()">Send Message</button>
+        <!-- Div to display messages and connection status -->
         <div id="output"></div>
     </div>
 
     <script>
+        // Variable to hold the WebSocket connection
         let socket;
 
+        // Function to connect to the WebSocket server
         function connect() {
+            // Create a new WebSocket connection
             socket = new WebSocket("ws://127.0.0.1:8080");
             socket.onopen = function(event) {
+                // When the connection is opened, display a message
                 document.getElementById("output").innerHTML += "<span style='color: green;'>Connected to server</span><br>";
             };
             socket.onmessage = function(event) {
+                // When a message is received, display it
                 document.getElementById("output").innerHTML += "<span style='color: blue;'>Message received:</span> " + event.data + "<br>";
             };
             socket.onclose = function(event) {
+                // When the connection is closed, display a message
                 document.getElementById("output").innerHTML += "<span style='color: red;'>Disconnected from server</span><br>";
             };
         }
 
+        // Function to send a message to the WebSocket server
         function sendMessage() {
+            // Get the message from the input field or use a default message
             let message = document.getElementById("messageInput").value || "Hello, Server!";
+            // Send the message through the WebSocket connection
             socket.send(message);
+            // Display the sent message
             document.getElementById("output").innerHTML += "<span style='color: purple;'>Message sent:</span> " + message + "<br>";
-            document.getElementById("messageInput").value = ""; 
+            // Clear the input field
+            document.getElementById("messageInput").value = "";
         }
     </script>
 </body>
