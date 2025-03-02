@@ -6,45 +6,49 @@
 </head>
 <body>
   <h2>WebSocket Client</h2>
-  <!-- Button to initiate connection -->
+  <!-- Button to connect to the server -->
   <button onclick="connect()">Connect</button>
-  <!-- Input for the message to send -->
+  <!-- Input box to type messages -->
   <input type="text" id="msg" placeholder="Enter message">
   <!-- Button to send the message -->
   <button onclick="sendMsg()">Send</button>
-  <!-- Output area for connection status and messages -->
+  <!-- Area to show messages -->
   <div id="output"></div>
 
   <script>
-    let ws; // Declare a global WebSocket variable
+    let ws; // This will hold our WebSocket connection
 
-    // Connect to the WebSocket server
+    // Function to connect to the server
     function connect() {
-      ws = new WebSocket("ws://127.0.0.1:8080"); // Adjust URL if needed
+      ws = new WebSocket("ws://127.0.0.1:8080");
 
-      // When the connection opens, show a message
+      // When we connect, show "Connected"
       ws.onopen = () => {
-        document.getElementById("output").innerHTML += "Connected<br>";
+        log("Connected");
       };
 
-      // When a message is received from the server, display it
+      // When we get a message, show it
       ws.onmessage = (e) => {
-        document.getElementById("output").innerHTML += "Received: " + e.data + "<br>";
+        log("Received: " + e.data);
       };
 
-      // When the connection is closed, show a message
+      // When we disconnect, show "Disconnected"
       ws.onclose = () => {
-        document.getElementById("output").innerHTML += "Disconnected<br>";
+        log("Disconnected");
       };
     }
 
-    // Send a message to the server
+    // Function to send a message
     function sendMsg() {
-      // Get text from the input or use a default message
       const message = document.getElementById("msg").value || "Hello, Server!";
-      ws.send(message); // Send the message over the WebSocket
-      document.getElementById("output").innerHTML += "Sent: " + message + "<br>";
-      document.getElementById("msg").value = ""; // Clear the input field
+      ws.send(message); // Send the message to the server
+      log("Sent: " + message); // Show the sent message
+      document.getElementById("msg").value = ""; // Clear the input box
+    }
+
+    // Function to show messages on the page
+    function log(message) {
+      document.getElementById("output").innerHTML += message + "<br>";
     }
   </script>
 </body>
